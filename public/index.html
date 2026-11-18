@@ -47,7 +47,7 @@ pre{white-space:pre-wrap;color:#d5d3e3;font-size:13px;overflow-wrap:anywhere;mar
 <div class="row"><h2>02 · Pre-production review</h2><span class="status">Approval required</span></div>
 <div id="planContent"></div>
 <div id="generationGate" class="lock">Checking generation readiness…</div>
-<button id="approve" disabled>Approve plan and generate 10-second test</button>
+<label for="accessKey">Workspace access key</label><input id="accessKey" type="password" autocomplete="current-password" placeholder="Enter the private workspace key"><button id="approve" disabled>Approve plan and generate 10-second test</button>
 <p class="muted">Approval is for this specific plan. Generation is separately locked by server-side account, spending-cap and enable checks.</p>
 </section>
 </main>
@@ -66,6 +66,7 @@ async function refreshStatus(){
       if(!c.apiCredential)missing.push("Fal API key is not configured on the server");
       if(!c.explicitEnableFlag)missing.push("generation safety switch is off");
       if(!c.spendingCapCoversTest)missing.push("spending cap does not cover the estimated $"+c.estimatedTestCostUsd+" test");
+      if(!engineStatus.accessTokenConfigured)missing.push("workspace access key is not configured");
       $("#generationGate").textContent="Generation locked: "+missing.join("; ")+". No credits can be spent from this workspace yet.";
       $("#approve").disabled=true;
     }else{
@@ -104,11 +105,14 @@ $("#approve").addEventListener("click",async()=>{
   if(!currentPlan||!engineStatus?.generationEnabled)return;
   $("#approve").disabled=true;$("#result").textContent="Submitting approved test…";
   try{
-    const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan:currentPlan,approved:true})});
+    const token=$("#accessKey").value.trim()||sessionStorage.getItem("engineAccessToken")||"";
+    if(!token)throw new Error("Enter the workspace access key first.");
+    sessionStorage.setItem("engineAccessToken",token);
+    const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify({plan:currentPlan,approved:true})});
     const data=await r.json();if(!r.ok)throw new Error(data.error||"Generation request failed");
     $("#result").textContent="Job accepted: "+data.requestId+". Estimated cost: $"+data.estimatedCostUsd+". Checking progress…";
     const poll=async()=>{
-      const check=await fetch("/api/jobs/"+encodeURIComponent(data.requestId));const job=await check.json();
+      const check=await fetch("/api/jobs/"+encodeURIComponent(data.requestId),{headers:{"Authorization":"Bearer "+token}});const job=await check.json();
       if(!check.ok)throw new Error(job.error||"Could not check job");
       if(job.status==="COMPLETED"){
         const video=job.result?.video?.url;
@@ -121,6 +125,7 @@ $("#approve").addEventListener("click",async()=>{
     await poll();
   }catch(e){$("#result").textContent=e.message;$("#approve").disabled=false;}
 });
+$("#accessKey").value=sessionStorage.getItem("engineAccessToken")||"";
 refreshStatus();
 </script>
 </body></html>
