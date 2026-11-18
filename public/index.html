@@ -35,7 +35,7 @@ pre{white-space:pre-wrap;color:#d5d3e3;font-size:13px;overflow-wrap:anywhere;mar
 
 <section class="panel">
 <h2>01 · Story concept</h2>
-<label for="concept">What happens in the story?</label>
+<div class="row"><label for="concept">What happens in the story?</label><button class="secondary" id="ideaButton" type="button">Explore story ideas</button></div><div id="ideas" class="grid" hidden></div>
 <textarea id="concept" placeholder="A tiny robot finds a fallen star and tries to return it to the night sky…"></textarea>
 <label for="style">Visual direction</label>
 <input id="style" value="cinematic 2D animation, expressive characters, rich painterly environments">
@@ -92,6 +92,26 @@ function renderPlan(p){
     '<h3>Sound and music plan</h3><p><b>Narration:</b> '+esc(p.soundPlan.narration)+'</p><p><b>Music:</b> '+esc(p.soundPlan.music)+'</p><p><b>Effects:</b> '+esc(p.soundPlan.effects)+'</p><p><b>Mix:</b> '+esc(p.soundPlan.mix)+'</p>'+
     '<h3>Production pipeline</h3>'+list(p.productionStages);
 }
+
+$("#ideaButton").addEventListener("click",async()=>{
+  const box=$("#ideas");
+  if(!box.hidden){box.hidden=true;return;}
+  $("#ideaButton").disabled=true;$("#ideaButton").textContent="Loading ideas…";
+  try{
+    const r=await fetch("/api/ideas");const data=await r.json();
+    box.innerHTML=data.ideas.map((idea,i)=>'<div class="beat"><div class="time">'+esc(idea.genre)+'</div><h3>'+esc(idea.title)+'</h3><p>'+esc(idea.concept)+'</p><button class="secondary" type="button" data-idea="'+i+'">Use this idea</button></div>').join("")+
+      '<div class="beat"><div class="time">AUTOMATIC PICK</div><h3>Let the engine choose</h3><p>Choose one of the six concepts at random.</p><button class="secondary" type="button" data-idea="random">Choose for me</button></div>';
+    box.hidden=false;
+  }catch(e){$("#result").textContent="Could not load story ideas.";}
+  finally{$("#ideaButton").disabled=false;$("#ideaButton").textContent="Explore story ideas";}
+});
+$("#ideas").addEventListener("click",async event=>{
+  const button=event.target.closest("button[data-idea]");if(!button)return;
+  const r=await fetch("/api/ideas");const data=await r.json();
+  const idx=button.dataset.idea==="random"?Math.floor(Math.random()*data.ideas.length):Number(button.dataset.idea);
+  const idea=data.ideas[idx];$("#concept").value=idea.concept;$("#ideas").hidden=true;
+});
+
 $("#makePlan").addEventListener("click",async()=>{
   $("#result").textContent="Building the plan…";
   try{
