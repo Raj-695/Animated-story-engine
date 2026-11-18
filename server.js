@@ -8,6 +8,28 @@ const port = Number(process.env.PORT || 8080);
 const root = path.dirname(fileURLToPath(import.meta.url));
 const VIDEO_MODEL = process.env.FAL_VIDEO_MODEL || "minimax/h3-max/text-to-video";
 const COST_PER_SECOND = Number(process.env.FAL_VIDEO_COST_PER_SECOND || 0.0375);
+const AUDIO_ENDPOINTS = {
+  narration: "elevenlabs/tts/eleven-v4",
+  music: "elevenlabs/music/v2.5",
+  ambience: "elevenlabs/sound-effects/v3",
+  foley: "elevenlabs/sound-effects/v3",
+  payoff: "elevenlabs/sound-effects/v3"
+};
+const VIDEO_ENDPOINT = VIDEO_MODEL;
+function estimateCost(plan) {
+  const chars = String(plan?.voiceover?.draft || "").length || 150;
+  const video = 10 * COST_PER_SECOND;
+  const narration = chars / 1000 * 0.08;
+  const music = 10 / 60 * 0.6;
+  const effects = 6 * 0.002;
+  return {
+    video: Number(video.toFixed(4)),
+    narration: Number(narration.toFixed(4)),
+    music: Number(music.toFixed(4)),
+    soundEffects: Number(effects.toFixed(4)),
+    total: Number((video + narration + music + effects).toFixed(2))
+  };
+}
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
@@ -116,7 +138,8 @@ app.get("/api/status", (_req, res) => {
   const accessTokenConfigured = Boolean(process.env.ENGINE_ACCESS_TOKEN);
   const enabled = process.env.ENABLE_GENERATION === "true";
   const maxSpend = Number(process.env.MAX_GENERATION_USD || 0);
-  const estimatedCostUsd = Number((10 * COST_PER_SECOND).toFixed(4));
+  const estimatedCosts = estimateCost({ voiceover: { draft: "Every little journey begins with a reason to move. Then the world gets in the way. The clever part is what happens next." } });
+  const estimatedCostUsd = estimatedCosts.total;
   res.json({
     service: "animated-story-engine",
     plannerReady: true,
@@ -129,6 +152,7 @@ app.get("/api/status", (_req, res) => {
       explicitEnableFlag: enabled,
       spendingCapCoversTest: maxSpend >= estimatedCostUsd,
       estimatedTestCostUsd: estimatedCostUsd,
+      costBreakdown: estimatedCosts,
       configuredSpendingCapUsd: maxSpend
     },
     videoModel: VIDEO_MODEL,
@@ -185,63 +209,133 @@ function requireEngineAccess(req, res, next) {
   next();
 }
 
-app.post("/api/generate", requireEngineAccess, async (req, res) => {
+app.post("/api/produce", requireEngineAccess, async (req, res) => {
   const plan = req.body?.plan;
   const approved = req.body?.approved === true;
-  const statusEnabled = process.env.ENABLE_GENERATION === "true";
+  const enabled = process.env.ENABLE_GENERATION === "true";
+  const costs = estimateCost(plan);
   const maxSpend = Number(process.env.MAX_GENERATION_USD || 0);
-  const estimatedCostUsd = Number((10 * COST_PER_SECOND).toFixed(4));
 
   if (!plan || plan.status !== "draft" || plan.durationSeconds !== 10 || !plan.planId) {
     return res.status(400).json({ error: "A valid 10-second pre-production draft is required." });
   }
   if (!approved) return res.status(403).json({ error: "Review and approve the complete pre-production plan first." });
   if (!process.env.FAL_KEY) return res.status(503).json({ error: "Fal API credential is not configured on the server." });
-  if (!statusEnabled) return res.status(423).json({ error: "Generation is intentionally locked. ENABLE_GENERATION is not true." });
-  if (maxSpend < estimatedCostUsd) {
-    return res.status(402).json({ error: "The configured spending cap is below the estimated test cost.", estimatedCostUsd });
+  if (!enabled) return res.status(423).json({ error: "Generation is intentionally locked. ENABLE_GENERATION is not true." });
+  if (maxSpend < costs.total) {
+    return res.status(402).json({ error: "The configured spending cap is below the estimated full test cost.", estimatedCostUsd: costs.total, costBreakdown: costs });
   }
 
-  try {
-    const base = falEndpointBase(VIDEO_MODEL);
-    const response = await fetch(base, {
-      method: "POST",
-      headers: { ...falHeaders(), "X-Fal-Queue-Priority": "low", "X-Fal-No-Retry": "1", "X-Fal-Store-IO": "1" },
-      body: JSON.stringify({
+  const requests = [
+    {
+      type: "video",
+      endpoint: VIDEO_ENDPOINT,
+      input: {
         prompt: buildVideoPrompt(plan),
         duration: 10,
         resolution: "768P",
         aspect_ratio: "16:9",
         prompt_expansion_mode: "quality",
         enable_safety_checker: true
-      })
+      }
+    },
+    {
+      type: "narration",
+      endpoint: AUDIO_ENDPOINTS.narration,
+      input: {
+        text: plan.voiceover.draft,
+        voice: "Rachel",
+        stability: 0.35,
+        similarity_boost: 0.75,
+        output_format: "mp3_44100_128",
+        enable_safety_checker: true
+      }
+    },
+    {
+      type: "music",
+      endpoint: AUDIO_ENDPOINTS.music,
+      input: {
+        prompt: "Original 10-second cinematic instrumental score for a short animated story. Begin with a delicate, curious motif, build a little tension in the middle, then resolve warmly and memorably. Orchestral textures blended with subtle modern sound design, clear emotional arc, no vocals, no lyrics.",
+        music_length_ms: 10000,
+        force_instrumental: true,
+        output_format: "mp3_48000_192",
+        enable_safety_checker: true
+      }
+    },
+    {
+      type: "ambience",
+      endpoint: AUDIO_ENDPOINTS.ambience,
+      input: {
+        text: "Soft, believable environmental ambience matching the story location, gently evolving over two seconds, clean recording, no music, no voices.",
+        duration_seconds: 2,
+        prompt_influence: 0.7,
+        enable_safety_checker: true
+      }
+    },
+    {
+      type: "foley",
+      endpoint: AUDIO_ENDPOINTS.foley,
+      input: {
+        text: "Close, tactile character movement and physical contact sounds synchronized to a small animated character moving through its environment, two seconds, no music, no speech.",
+        duration_seconds: 2,
+        prompt_influence: 0.8,
+        enable_safety_checker: true
+      }
+    },
+    {
+      type: "payoff",
+      endpoint: AUDIO_ENDPOINTS.payoff,
+      input: {
+        text: "A distinctive, emotionally satisfying magical reveal accent with a soft rising shimmer and warm resonant tail, two seconds, no music, no speech.",
+        duration_seconds: 2,
+        prompt_influence: 0.8,
+        enable_safety_checker: true
+      }
+    }
+  ];
+
+  const results = await Promise.allSettled(requests.map(async item => {
+    const response = await fetch(falEndpointBase(item.endpoint), {
+      method: "POST",
+      headers: { ...falHeaders(), "X-Fal-Queue-Priority": "low", "X-Fal-No-Retry": "1", "X-Fal-Store-IO": "1" },
+      body: JSON.stringify(item.input)
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      return res.status(response.status).json({ error: payload.detail || payload.error || "Fal rejected the generation request.", provider: "fal" });
-    }
-    res.status(202).json({
-      status: payload.status || "IN_QUEUE",
+    if (!response.ok) throw new Error(payload.detail || payload.error || ("Fal rejected " + item.type));
+    return {
+      type: item.type,
+      endpointId: item.endpoint,
       requestId: payload.request_id,
       statusUrl: payload.status_url,
       responseUrl: payload.response_url,
-      estimatedCostUsd,
-      model: VIDEO_MODEL,
-      planId: plan.planId
-    });
-  } catch (error) {
-    res.status(502).json({ error: "Could not submit the generation request.", detail: error.message });
-  }
+      status: payload.status || "IN_QUEUE"
+    };
+  }));
+
+  const jobs = results.map((result, index) => result.status === "fulfilled"
+    ? { ...result.value, accepted: true }
+    : { type: requests[index].type, endpointId: requests[index].endpoint, accepted: false, error: result.reason?.message || "Submission failed." });
+  const acceptedCount = jobs.filter(job => job.accepted).length;
+  res.status(acceptedCount ? 202 : 502).json({
+    status: acceptedCount === jobs.length ? "accepted" : acceptedCount ? "partial" : "failed",
+    planId: plan.planId,
+    estimatedCostUsd: costs.total,
+    costBreakdown: costs,
+    jobs
+  });
 });
 
-app.get("/api/jobs/:requestId", requireEngineAccess, async (req, res) => {
+app.get("/api/jobs/:jobType/:requestId", requireEngineAccess, async (req, res) => {
   if (!process.env.FAL_KEY) return res.status(503).json({ error: "Fal API credential is not configured on the server." });
   const requestId = req.params.requestId;
+  const jobType = req.params.jobType;
+  const endpoint = jobType === "video" ? VIDEO_ENDPOINT : AUDIO_ENDPOINTS[jobType];
+  if (!endpoint) return res.status(400).json({ error: "Unknown job type." });
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
     return res.status(400).json({ error: "Invalid request ID." });
   }
   try {
-    const base = falEndpointBase(VIDEO_MODEL);
+    const base = falEndpointBase(endpoint);
     const appBase = base.split("/").slice(0, 5).join("/");
     const statusResponse = await fetch(appBase + "/requests/" + requestId + "/status", { headers: falHeaders() });
     const status = await statusResponse.json().catch(() => ({}));
@@ -256,6 +350,3 @@ app.get("/api/jobs/:requestId", requireEngineAccess, async (req, res) => {
   }
 });
 
-app.listen(port, "0.0.0.0", () => {
-  console.log("Animated Story Engine listening on " + port);
-});
