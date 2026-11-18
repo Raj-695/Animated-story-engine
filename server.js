@@ -16,6 +16,15 @@ const AUDIO_ENDPOINTS = {
   payoff: "elevenlabs/sound-effects/v3"
 };
 const VIDEO_ENDPOINT = VIDEO_MODEL;
+const STORY_IDEAS = [
+  { title: "The Lighthouse in a Teacup", genre: "Whimsical · heartfelt", concept: "A tiny lighthouse keeper living inside a teacup spots a storm approaching a fleet of paper boats and must guide them safely through a kitchen sink." },
+  { title: "The Ghost Who Hated Scaring People", genre: "Comedy · warm", concept: "A gentle ghost tries to frighten a family out of an old house, but every attempt accidentally helps them fix something, until they invite the ghost to stay." },
+  { title: "Express Delivery to the Moon", genre: "Adventure · wonder", concept: "A determined delivery pigeon discovers that the last package in its bag is addressed to the moon, then builds a ridiculous chain of lifts to complete the delivery." },
+  { title: "The Umbrella with Stage Fright", genre: "Comedy · character-driven", concept: "An umbrella dreams of becoming a parachute, but freezes every time the wind picks it up, until a tiny leaf needs rescuing from a rooftop." },
+  { title: "One More Battery", genre: "Emotional · sci-fi", concept: "A little maintenance robot with one battery bar left spends its final energy helping a lost child find the way home, then discovers a small light left glowing for it." },
+  { title: "The Dragon's Tiny Hiccup", genre: "Comedy · fantasy", concept: "A young dragon's hiccups accidentally set off tiny fireworks across a village, and the dragon must learn to control the sparks before the big festival finale." }
+];
+
 function estimateCost(plan) {
   const chars = String(plan?.voiceover?.draft || "").length || 150;
   const video = 10 * COST_PER_SECOND;
@@ -128,6 +137,8 @@ function makePlan(concept, style) {
     generationEnabled: false
   };
 }
+
+app.get("/api/ideas", (_req, res) => res.json({ ideas: STORY_IDEAS, choice: "Let the engine choose" }));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "animated-story-engine", version: "0.2.0" });
