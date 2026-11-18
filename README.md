@@ -1,51 +1,62 @@
 # Animated Story Engine
 
-A cloud-hosted pre-production and video-generation workspace for short animated stories.
+Cloud-hosted pre-production and short-form animated-story production workspace.
 
-## Current architecture
+## Implemented
 
-- Railway / Express serves the dashboard and API.
-- Pre-production planner builds a reviewable 10-second story plan: dramatic beats, narration draft, shot list, character and environment continuity bibles, visual direction, lighting, camera, animation and sound plan.
-- Fal queue API submits the approved video prompt asynchronously, checks the original job, and retrieves the result. The Fal key remains server-side.
-- Safety gates require an approved plan, ENABLE_GENERATION=true, a configured FAL_KEY, and a spending cap that covers the estimated request cost.
-- No automatic retry is sent to Fal for paid generation requests.
+- Railway-hosted Express dashboard and API.
+- Six curated story starters plus a random-pick option.
+- Structured 10-second pre-production plan: dramatic arc, voiceover draft, shot list, character and environment continuity, visual style, lighting, animation, camera and sound plan.
+- Fal queue integration for one 10-second video, narration, original instrumental music, ambience, character foley and a payoff sound effect.
+- Job polling uses each original request ID and does not resubmit pending jobs.
+- Paid production is fail-closed: it requires a server-side Fal key, an explicit generation switch, a sufficient estimated-cost cap, workspace authentication and approval of the plan.
+- No automatic retry is sent for paid Fal jobs.
 
-## Railway configuration
+## Not yet complete or verified
 
-Set these variables on the story-engine-api service only when ready:
+- The connected Fal account currently has no credits, so generation and uploads are blocked.
+- A Fal API key has not been placed in Railway. ChatGPT's private Fal connection is not automatically available to the Railway container.
+- Final audio synchronization, mixing, MP4 assembly and decoder-based quality checks are not yet implemented.
+- The workspace has not completed an actual paid or free generated-video test. Do not treat a successful Railway deployment as proof of a completed video.
 
-| Variable | Purpose | Safe default |
+## Railway service variables
+
+| Variable | Purpose | Default / current state |
 | --- | --- | --- |
-| FAL_VIDEO_MODEL | Exact Fal endpoint ID | minimax/h3-max/text-to-video |
-| FAL_VIDEO_COST_PER_SECOND | Current planning estimate in USD | 0.0375 |
-| FAL_KEY | Server-side Fal API key with request submit/read permissions | Not configured |
-| ENABLE_GENERATION | Explicit generation master switch | false |
-| MAX_GENERATION_USD | Maximum approved estimated cost per test | 0 |
+| FAL_VIDEO_MODEL | Exact Fal video endpoint | minimax/h3-max/text-to-video |
+| FAL_VIDEO_COST_PER_SECOND | Video estimate in USD | 0.0375 |
+| FAL_KEY | Server-side Fal key with request submit/read permissions | Not configured |
+| ENGINE_ACCESS_TOKEN | Private workspace access key | Configured as a Railway secret |
+| ENABLE_GENERATION | Explicit generation master switch | false unless deliberately enabled |
+| MAX_GENERATION_USD | Maximum estimated total cost per production run | 0 unless deliberately raised |
 
-For the selected H3 Max endpoint, the current catalog estimate is USD 0.0375 per second. A 10-second test is therefore estimated at USD 0.375. This is an estimate, not a guarantee of final billing. Re-check pricing before production changes.
+Current estimated production costs for a 10-second test:
+- Video: approximately USD 0.375
+- Narration: approximately USD 0.01, based on the current draft length
+- 10-second instrumental music: approximately USD 0.10
+- Three short sound-effect layers: approximately USD 0.012
+- Total estimate: approximately USD 0.50
 
-Do not set the generation switch or spending cap until the account owner explicitly intends to run a paid generation. The server defaults to fail-closed behavior.
+These are rate-based estimates, not guaranteed final charges. Check live pricing before production changes. Do not enable generation or raise the cap unless the account owner intends to spend.
 
 ## API
 
-- GET /health — process health.
-- GET /api/status — credential presence, generation gates and cost estimate. Never returns secrets.
+- GET /health — health check.
+- GET /api/status — credential presence, model and cost/safety gates. Never returns secrets.
+- GET /api/ideas — six curated story concepts.
 - POST /api/plan — creates a structured pre-production draft. Body fields: concept, duration=10, style.
-- POST /api/generate — submits an approved 10-second plan to Fal. Body fields: plan, approved=true.
-- GET /api/jobs/:requestId — reads status and completed result for a previously submitted job.
+- POST /api/produce — submits the approved video and audio jobs. Requires Bearer workspace access token and approved=true.
+- GET /api/jobs/:jobType/:requestId — checks an existing job and retrieves its completed result. Job types: video, narration, music, ambience, foley, payoff.
 
-## Workflow
+## Production workflow
 
-1. Write a story concept.
-2. Generate the complete pre-production plan.
-3. Review and approve the story, voiceover, visual direction, continuity and sound plan.
-4. Only when the Fal account is funded and the server safety gates are deliberately enabled, submit the 10-second test.
-5. Poll the same job ID; never resubmit a job just because it is still processing.
-6. Inspect the output, then plan any separate narration, music, effects and final edit/render stages.
-
-## Important current limitation
-
-The dashboard and server-side queue integration are deployed code, not proof that video generation is currently available. The connected Fal account must have credits and a server-side API key. This app does not have access to ChatGPT's private Fal connection automatically. Audio production, multi-shot reference conditioning, persistent job history, and final MP4 assembly remain later production stages; do not describe them as complete until implemented and tested.
+1. Pick a story idea or enter a concept.
+2. Generate and review the complete pre-production plan.
+3. Approve the story, narration, visual direction, continuity and sound plan.
+4. When the Fal account is funded and server-side gates are deliberately enabled, submit the production jobs.
+5. Track each accepted job by its original request ID.
+6. Inspect the video and separate audio assets.
+7. Complete the remaining assembly stage: synchronize narration, music and effects, mix, render MP4, then validate duration, audio and codec.
 
 ## Local development
 
