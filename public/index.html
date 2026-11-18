@@ -3,50 +3,124 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101116">
 <title>Animated Story Engine</title>
 <style>
-:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#101116;color:#f4f4f6}
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#101116;color:#f4f4f6}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 80% 0,#25233b 0,transparent 38%),#101116}
-main{max-width:760px;margin:0 auto;padding:48px 22px}.tag{color:#b9a8ff;font-size:12px;letter-spacing:.15em;text-transform:uppercase}
-h1{font-size:clamp(32px,7vw,54px);line-height:1.02;margin:14px 0}p{color:#b7b8c3;line-height:1.6}
-.panel{background:#1a1b24;border:1px solid #30313d;border-radius:18px;padding:22px;margin-top:26px}
+main{max-width:980px;margin:0 auto;padding:38px 20px 70px}.tag{color:#b9a8ff;font-size:12px;letter-spacing:.15em;text-transform:uppercase}
+h1{font-size:clamp(32px,7vw,54px);line-height:1.02;margin:14px 0}h2{font-size:20px;margin:0 0 12px}h3{font-size:15px;margin:0 0 8px;color:#e9e4ff}
+p{color:#b7b8c3;line-height:1.6}.panel,.plan-card{background:#1a1b24;border:1px solid #30313d;border-radius:18px;padding:22px;margin-top:22px}
 label{display:block;font-size:14px;margin:16px 0 8px;color:#dedee7}
 textarea,input{width:100%;background:#11121a;border:1px solid #393a49;border-radius:10px;color:#fff;padding:13px;font:inherit}
-textarea{min-height:110px;resize:vertical}button{margin-top:18px;background:#b7a5ff;color:#171321;border:0;border-radius:10px;padding:13px 18px;font-weight:700;font-size:15px}
+textarea{min-height:110px;resize:vertical}
+button{margin-top:16px;background:#b7a5ff;color:#171321;border:0;border-radius:10px;padding:13px 18px;font-weight:750;font-size:14px;cursor:pointer}
+button.secondary{background:#292a35;color:#eee;border:1px solid #454655}button:disabled{opacity:.45;cursor:not-allowed}
 .status{display:inline-flex;gap:8px;align-items:center;padding:8px 11px;border-radius:20px;background:#292a35;color:#ddd;font-size:13px}
-#result{white-space:pre-wrap;color:#d5d3e3;font-size:13px;overflow-wrap:anywhere}
-small{color:#9293a2}
+.muted,small{color:#9293a2}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.beat{background:#13141c;border:1px solid #30313d;border-radius:12px;padding:14px}.time{color:#b9a8ff;font-size:12px;font-weight:700;letter-spacing:.08em}
+pre{white-space:pre-wrap;color:#d5d3e3;font-size:13px;overflow-wrap:anywhere;margin:8px 0 0}
+#plan{display:none}#result{color:#d5d3e3;white-space:pre-wrap;font-size:13px}
+.lock{border:1px solid #5a4a2b;background:#211d16;padding:14px;border-radius:12px;color:#e9d6ae;margin-top:14px}
+.good{border-color:#365c48;background:#14231b;color:#b9e4c8}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+@media(max-width:560px){main{padding:28px 14px}.panel,.plan-card{padding:17px}}
 </style>
 </head>
 <body><main>
-<div class="tag">Pre-production workspace</div>
+<div class="tag">Automated story production workspace</div>
 <h1>Animated Story Engine</h1>
-<p>Build the story before spending a generation credit. Review the script, scenes, characters, camera, lighting and sound plan before production.</p>
-<div class="status" id="status">Checking engine…</div>
+<p>One review checkpoint. The engine prepares the story, character continuity, shots, camera, lighting and sound plan before production. No generation starts without approval.</p>
+<div class="row"><div class="status" id="status">Checking engine…</div><small id="model"></small></div>
+
 <section class="panel">
-<h2>Prepare a 10-second test</h2>
-<label for="concept">Story concept</label>
-<textarea id="concept" placeholder="A tiny robot tries to return a lost star to the night sky…"></textarea>
+<h2>01 · Story concept</h2>
+<label for="concept">What happens in the story?</label>
+<textarea id="concept" placeholder="A tiny robot finds a fallen star and tries to return it to the night sky…"></textarea>
 <label for="style">Visual direction</label>
-<input id="style" value="cinematic 2D animation, expressive characters, rich environments">
-<button id="plan">Create pre-production draft</button>
+<input id="style" value="cinematic 2D animation, expressive characters, rich painterly environments">
+<button id="makePlan">Build complete pre-production plan</button>
 <p id="result" aria-live="polite"></p>
-<small>Nothing is generated or charged from this page. Production remains locked until provider setup and your approval.</small>
+</section>
+
+<section id="plan" class="plan-card">
+<div class="row"><h2>02 · Pre-production review</h2><span class="status">Approval required</span></div>
+<div id="planContent"></div>
+<div id="generationGate" class="lock">Checking generation readiness…</div>
+<button id="approve" disabled>Approve plan and generate 10-second test</button>
+<p class="muted">Approval is for this specific plan. Generation is separately locked by server-side account, spending-cap and enable checks.</p>
 </section>
 </main>
 <script>
-const statusEl=document.querySelector("#status");
-fetch("/api/status").then(r=>r.json()).then(s=>{
- statusEl.textContent=s.ready?"Provider configured":"Pre-production ready · generation not configured";
-}).catch(()=>statusEl.textContent="API connection unavailable");
-document.querySelector("#plan").addEventListener("click",async()=>{
- const result=document.querySelector("#result");
- result.textContent="Preparing draft…";
- try{
-  const r=await fetch("/api/plan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({concept:document.querySelector("#concept").value,duration:10,style:document.querySelector("#style").value})});
-  const data=await r.json();
-  result.textContent=r.ok?JSON.stringify(data,null,2):data.error;
- }catch(e){result.textContent="Could not reach the engine. Please retry."}
+let currentPlan=null;
+let engineStatus=null;
+const $=s=>document.querySelector(s);
+async function refreshStatus(){
+  try{
+    const r=await fetch("/api/status");engineStatus=await r.json();
+    $("#status").textContent=engineStatus.generationEnabled?"Planner ready · generation configured":"Planner ready · generation locked";
+    $("#model").textContent=engineStatus.videoModel+" · estimated test cost $"+engineStatus.generationChecks.estimatedTestCostUsd;
+    if(!engineStatus.generationEnabled){
+      const c=engineStatus.generationChecks;
+      const missing=[];
+      if(!c.apiCredential)missing.push("Fal API key is not configured on the server");
+      if(!c.explicitEnableFlag)missing.push("generation safety switch is off");
+      if(!c.spendingCapCoversTest)missing.push("spending cap does not cover the estimated $"+c.estimatedTestCostUsd+" test");
+      $("#generationGate").textContent="Generation locked: "+missing.join("; ")+". No credits can be spent from this workspace yet.";
+      $("#approve").disabled=true;
+    }else{
+      $("#generationGate").textContent="Generation is configured. Review the plan below before approving the test.";
+      $("#generationGate").classList.add("good");
+      $("#approve").disabled=false;
+    }
+  }catch(e){$("#status").textContent="API connection unavailable";}
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function renderPlan(p){
+  const beats=p.dramaticArc.map(b=>'<div class="beat"><div class="time">'+esc(b.time)+' · '+esc(b.beat)+'</div><p>'+esc(b.purpose)+'</p></div>').join("");
+  const shots=p.shotList.map(s=>'<div class="beat"><div class="time">'+esc(s.time)+'</div><h3>'+esc(s.shot)+'</h3><p>'+esc(s.action)+'</p></div>').join("");
+  const list=a=>'<ul>'+a.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>";
+  $("#planContent").innerHTML=
+    '<h3>Story premise</h3><p>'+esc(p.logline)+'</p>'+
+    '<h3>Dramatic arc</h3><div class="grid">'+beats+'</div>'+
+    '<h3>Voiceover direction and draft</h3><p>'+esc(p.voiceover.direction)+'</p><blockquote><p>'+esc(p.voiceover.draft)+'</p></blockquote>'+
+    '<h3>Shot breakdown</h3><div class="grid">'+shots+'</div>'+
+    '<h3>Character continuity bible</h3><p>'+esc(p.characterBible.identity)+'</p>'+list(p.characterBible.continuityRules)+'<p>'+esc(p.characterBible.performance)+'</p>'+
+    '<h3>Environment bible</h3><p>'+esc(p.environmentBible.direction)+'</p>'+list(p.environmentBible.continuityRules)+
+    '<h3>Visual direction</h3><p><b>Style:</b> '+esc(p.visualDirection.style)+'</p><p><b>Composition:</b> '+esc(p.visualDirection.composition)+'</p><p><b>Lighting:</b> '+esc(p.visualDirection.lighting)+'</p><p><b>Animation:</b> '+esc(p.visualDirection.animation)+'</p><p><b>Camera:</b> '+esc(p.visualDirection.camera)+'</p>'+
+    '<h3>Sound and music plan</h3><p><b>Narration:</b> '+esc(p.soundPlan.narration)+'</p><p><b>Music:</b> '+esc(p.soundPlan.music)+'</p><p><b>Effects:</b> '+esc(p.soundPlan.effects)+'</p><p><b>Mix:</b> '+esc(p.soundPlan.mix)+'</p>'+
+    '<h3>Production pipeline</h3>'+list(p.productionStages);
+}
+$("#makePlan").addEventListener("click",async()=>{
+  $("#result").textContent="Building the plan…";
+  try{
+    const r=await fetch("/api/plan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({concept:$("#concept").value,duration:10,style:$("#style").value})});
+    const data=await r.json();if(!r.ok)throw new Error(data.error||"Plan failed");
+    currentPlan=data;renderPlan(data);$("#plan").style.display="block";$("#result").textContent="Pre-production draft ready. Review every section below.";
+    $("#plan").scrollIntoView({behavior:"smooth",block:"start"});
+  }catch(e){$("#result").textContent=e.message;}
 });
+$("#approve").addEventListener("click",async()=>{
+  if(!currentPlan||!engineStatus?.generationEnabled)return;
+  $("#approve").disabled=true;$("#result").textContent="Submitting approved test…";
+  try{
+    const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan:currentPlan,approved:true})});
+    const data=await r.json();if(!r.ok)throw new Error(data.error||"Generation request failed");
+    $("#result").textContent="Job accepted: "+data.requestId+". Estimated cost: $"+data.estimatedCostUsd+". Checking progress…";
+    const poll=async()=>{
+      const check=await fetch("/api/jobs/"+encodeURIComponent(data.requestId));const job=await check.json();
+      if(!check.ok)throw new Error(job.error||"Could not check job");
+      if(job.status==="COMPLETED"){
+        const video=job.result?.video?.url;
+        $("#result").innerHTML=video?'Generation complete. <a href="'+esc(video)+'" target="_blank" rel="noopener">Open generated video</a>':"Job completed. Output returned, but no standard video URL was found.";
+        return;
+      }
+      $("#result").textContent="Generation status: "+job.status+". Checking again in 8 seconds…";
+      setTimeout(()=>poll().catch(e=>$("#result").textContent=e.message),8000);
+    };
+    await poll();
+  }catch(e){$("#result").textContent=e.message;$("#approve").disabled=false;}
+});
+refreshStatus();
 </script>
 </body></html>
