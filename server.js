@@ -1,7 +1,7 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 const app = express();
 const port = Number(process.env.PORT || 8080);
@@ -113,6 +113,7 @@ app.get("/health", (_req, res) => {
 
 app.get("/api/status", (_req, res) => {
   const falKey = Boolean(process.env.FAL_KEY);
+  const accessTokenConfigured = Boolean(process.env.ENGINE_ACCESS_TOKEN);
   const enabled = process.env.ENABLE_GENERATION === "true";
   const maxSpend = Number(process.env.MAX_GENERATION_USD || 0);
   const estimatedCostUsd = Number((10 * COST_PER_SECOND).toFixed(4));
@@ -121,7 +122,8 @@ app.get("/api/status", (_req, res) => {
     plannerReady: true,
     provider: "fal",
     configured: { falKey, videoModel: Boolean(VIDEO_MODEL) },
-    generationEnabled: Boolean(falKey && enabled && maxSpend >= estimatedCostUsd),
+    generationEnabled: Boolean(falKey && enabled && maxSpend >= estimatedCostUsd && accessTokenConfigured),
+    accessTokenConfigured,
     generationChecks: {
       apiCredential: falKey,
       explicitEnableFlag: enabled,
@@ -171,7 +173,19 @@ function buildVideoPrompt(plan) {
   ].join("\n");
 }
 
-app.post("/api/generate", async (req, res) => {
+function requireEngineAccess(req, res, next) {
+  const expected = process.env.ENGINE_ACCESS_TOKEN || "";
+  const supplied = (req.get("Authorization") || "").replace(/^Bearer\\s+/i, "");
+  if (!expected) return res.status(503).json({ error: "Engine access is not configured." });
+  const a = Buffer.from(expected);
+  const b = Buffer.from(supplied);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: "Enter the workspace access key to continue." });
+  }
+  next();
+}
+
+app.post("/api/generate", requireEngineAccess, async (req, res) => {
   const plan = req.body?.plan;
   const approved = req.body?.approved === true;
   const statusEnabled = process.env.ENABLE_GENERATION === "true";
@@ -220,7 +234,7 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
-app.get("/api/jobs/:requestId", async (req, res) => {
+app.get("/api/jobs/:requestId", requireEngineAccess, async (req, res) => {
   if (!process.env.FAL_KEY) return res.status(503).json({ error: "Fal API credential is not configured on the server." });
   const requestId = req.params.requestId;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
