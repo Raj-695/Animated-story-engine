@@ -108,19 +108,28 @@ $("#approve").addEventListener("click",async()=>{
     const token=$("#accessKey").value.trim()||sessionStorage.getItem("engineAccessToken")||"";
     if(!token)throw new Error("Enter the workspace access key first.");
     sessionStorage.setItem("engineAccessToken",token);
-    const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify({plan:currentPlan,approved:true})});
-    const data=await r.json();if(!r.ok)throw new Error(data.error||"Generation request failed");
-    $("#result").textContent="Job accepted: "+data.requestId+". Estimated cost: $"+data.estimatedCostUsd+". Checking progress…";
+    const r=await fetch("/api/produce",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify({plan:currentPlan,approved:true})});
+    const data=await r.json();if(!r.ok)throw new Error(data.error||"Production request failed");
+    const accepted=data.jobs.filter(j=>j.accepted);
+    if(!accepted.length)throw new Error(data.jobs.map(j=>j.type+": "+j.error).join("\n"));
+    $("#result").textContent="Submitted "+accepted.length+" of "+data.jobs.length+" production jobs. Estimated total: $"+data.estimatedCostUsd+". Tracking the same jobs; no duplicate submissions will be made.";
     const poll=async()=>{
-      const check=await fetch("/api/jobs/"+encodeURIComponent(data.requestId),{headers:{"Authorization":"Bearer "+token}});const job=await check.json();
-      if(!check.ok)throw new Error(job.error||"Could not check job");
-      if(job.status==="COMPLETED"){
-        const video=job.result?.video?.url;
-        $("#result").innerHTML=video?'Generation complete. <a href="'+esc(video)+'" target="_blank" rel="noopener">Open generated video</a>':"Job completed. Output returned, but no standard video URL was found.";
-        return;
+      const snapshots=await Promise.all(accepted.map(async j=>{
+        const check=await fetch("/api/jobs/"+encodeURIComponent(j.type)+"/"+encodeURIComponent(j.requestId),{headers:{"Authorization":"Bearer "+token}});
+        const job=await check.json();if(!check.ok)throw new Error(job.error||("Could not check "+j.type));
+        return {type:j.type,...job};
+      }));
+      const links=snapshots.filter(j=>j.status==="COMPLETED").map(j=>{
+        const url=j.result?.video?.url||j.result?.audio?.url;
+        return url?'<p><b>'+esc(j.type)+'</b>: <a href="'+esc(url)+'" target="_blank" rel="noopener">Open generated '+esc(j.type)+'</a></p>':'<p><b>'+esc(j.type)+'</b>: completed, output URL not found.</p>';
+      }).join("");
+      const done=snapshots.filter(j=>j.status==="COMPLETED").length;
+      $("#result").innerHTML="Completed "+done+" of "+snapshots.length+" jobs."+links;
+      if(done<snapshots.length){
+        setTimeout(()=>poll().catch(e=>$("#result").textContent=e.message),8000);
+      }else{
+        $("#result").innerHTML+="<p>Assets are ready for final synchronization, mix and MP4 assembly. That render stage is not yet enabled.</p>";
       }
-      $("#result").textContent="Generation status: "+job.status+". Checking again in 8 seconds…";
-      setTimeout(()=>poll().catch(e=>$("#result").textContent=e.message),8000);
     };
     await poll();
   }catch(e){$("#result").textContent=e.message;$("#approve").disabled=false;}
