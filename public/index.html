@@ -135,21 +135,35 @@ $("#approve").addEventListener("click",async()=>{
     $("#result").textContent="Submitted "+accepted.length+" of "+data.jobs.length+" production jobs. Estimated total: $"+data.estimatedCostUsd+". Tracking the same jobs; no duplicate submissions will be made.";
     const poll=async()=>{
       const snapshots=await Promise.all(accepted.map(async j=>{
-        const check=await fetch("/api/jobs/"+encodeURIComponent(j.type)+"/"+encodeURIComponent(j.requestId),{headers:{"Authorization":"Bearer "+token}});
-        const job=await check.json();if(!check.ok)throw new Error(job.error||("Could not check "+j.type));
-        return {type:j.type,...job};
+        try{
+          const check=await fetch("/api/jobs/"+encodeURIComponent(j.type)+"/"+encodeURIComponent(j.requestId),{headers:{"Authorization":"Bearer "+token}});
+          const job=await check.json();
+          if(!check.ok)return {type:j.type,status:"ERROR",error:job.error||("Could not check "+j.type)};
+          return {type:j.type,...job};
+        }catch(error){return {type:j.type,status:"ERROR",error:error.message};}
       }));
-      const links=snapshots.filter(j=>j.status==="COMPLETED").map(j=>{
-        const url=j.result?.video?.url||j.result?.audio?.url;
-        return url?'<p><b>'+esc(j.type)+'</b>: <a href="'+esc(url)+'" target="_blank" rel="noopener">Open generated '+esc(j.type)+'</a></p>':'<p><b>'+esc(j.type)+'</b>: completed, output URL not found.</p>';
-      }).join("");
-      const done=snapshots.filter(j=>j.status==="COMPLETED").length;
-      $("#result").innerHTML="Completed "+done+" of "+snapshots.length+" jobs."+links;
+      const done=snapshots.filter(j=>j.status==="COMPLETED"||j.status==="ERROR").length;
+      const errors=snapshots.filter(j=>j.status==="ERROR");
+      $("#result").textContent="Resolved "+done+" of "+snapshots.length+" jobs. "+errors.map(j=>j.type+": "+j.error).join(" | ");
       if(done<snapshots.length){
         setTimeout(()=>poll().catch(e=>$("#result").textContent=e.message),8000);
-      }else{
-        $("#result").innerHTML+="<p>Assets are ready for final synchronization, mix and MP4 assembly. That render stage is not yet enabled.</p>";
+        return;
       }
+      if(errors.length){$("#result").textContent+=". Some assets failed; no final export was assembled.";return;}
+      const byType=Object.fromEntries(snapshots.map(j=>[j.type,j.result]));
+      const assets={
+        videoUrl:byType.video?.video?.url,
+        narrationUrl:byType.narration?.audio?.url,
+        musicUrl:byType.music?.audio?.url,
+        ambienceUrl:byType.ambience?.audio?.url,
+        foleyUrl:byType.foley?.audio?.url,
+        payoffUrl:byType.payoff?.audio?.url
+      };
+      $("#result").textContent="All six assets generated. Mixing audio and rendering the MP4…";
+      const assembled=await fetch("/api/assemble",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify({assets})});
+      const exportData=await assembled.json();
+      if(!assembled.ok)throw new Error(exportData.error||"Final assembly failed");
+      $("#result").innerHTML='<p><b>10-second MP4 ready.</b> '+(exportData.bytes/1048576).toFixed(1)+' MB</p><video controls playsinline style="width:100%;border-radius:12px" src="'+esc(exportData.videoUrl)+'"></video><p><a href="'+esc(exportData.videoUrl)+'" download="'+esc(exportData.fileName)+'">Download final MP4</a></p>';
     };
     await poll();
   }catch(e){$("#result").textContent=e.message;$("#approve").disabled=false;}
