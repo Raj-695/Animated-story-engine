@@ -375,6 +375,23 @@ app.listen(port, "0.0.0.0", async () => {
     try {
       const probe = await execFileAsync(ffmpegPath, ["-version"], { timeout: 10000, maxBuffer: 1024 * 1024 });
       console.log("FFmpeg renderer ready: " + String(probe.stdout).split("\n")[0]);
+      const probeFile = path.join(os.tmpdir(), "story-engine-render-probe.mp4");
+      try {
+        await execFileAsync(ffmpegPath, [
+          "-y",
+          "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24",
+          "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
+          "-t", "1",
+          "-c:v", "libx264", "-pix_fmt", "yuv420p",
+          "-c:a", "aac", "-movflags", "+faststart",
+          probeFile
+        ], { timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
+        const probeStat = await (await import("node:fs/promises")).stat(probeFile);
+        if (!probeStat.size) throw new Error("FFmpeg produced an empty test file.");
+        console.log("MP4/H.264/AAC render self-test passed: " + probeStat.size + " bytes");
+      } finally {
+        await rm(probeFile, { force: true }).catch(() => {});
+      }
     } catch (error) {
       console.error("FFmpeg renderer probe failed: " + error.message);
     }
