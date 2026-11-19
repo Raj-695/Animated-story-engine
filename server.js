@@ -369,6 +369,24 @@ app.get("/api/jobs/:jobType/:requestId", requireEngineAccess, async (req, res) =
 });
 
 
+
+app.post("/api/hyperframes-test", requireEngineAccess, async (_req, res) => {
+  const testDir = path.join(root, "hyperframes-test");
+  const outputDir = path.join(root, "public", "exports");
+  const outputFile = path.join(outputDir, "hyperframes-10s-test.mp4");
+  try {
+    await mkdir(outputDir, { recursive: true });
+    const { stdout, stderr } = await execFileAsync("npx", ["--yes", "hyperframes", "render", "--output", outputFile], {
+      cwd: testDir, timeout: 240000, maxBuffer: 5 * 1024 * 1024
+    });
+    const stat = await (await import("node:fs/promises")).stat(outputFile);
+    if (!stat.size) throw new Error("HyperFrames produced an empty MP4.");
+    res.json({ ok: true, renderer: "HeyGen HyperFrames", fileName: "hyperframes-10s-test.mp4", videoUrl: "/exports/hyperframes-10s-test.mp4", bytes: stat.size, log: (stdout + "\n" + stderr).slice(-12000) });
+  } catch (error) {
+    res.status(500).json({ ok: false, renderer: "HeyGen HyperFrames", error: error.message, detail: String(error.stderr || error.stdout || "").slice(-12000) });
+  }
+});
+
 app.listen(port, "0.0.0.0", async () => {
   console.log("Animated Story Engine listening on " + port);
   if (ffmpegPath) {
