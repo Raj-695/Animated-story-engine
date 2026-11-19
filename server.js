@@ -374,7 +374,7 @@ app.listen(port, "0.0.0.0", async () => {
   if (ffmpegPath) {
     try {
       const probe = await execFileAsync(ffmpegPath, ["-version"], { timeout: 10000, maxBuffer: 1024 * 1024 });
-      console.log("FFmpeg renderer ready: " + String(probe.stdout).split("\\n")[0]);
+      console.log("FFmpeg renderer ready: " + String(probe.stdout).split("\n")[0]);
     } catch (error) {
       console.error("FFmpeg renderer probe failed: " + error.message);
     }
