@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import ffmpegPath from "ffmpeg-static";
 
@@ -367,3 +367,7 @@ app.get("/api/jobs/:jobType/:requestId", requireEngineAccess, async (req, res) =
   }
 });
 
+
+app.listen(port, "0.0.0.0", () => {
+  console.log("Animated Story Engine listening on " + port);
+});
