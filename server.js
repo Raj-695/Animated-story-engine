@@ -2,8 +2,14 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import ffmpegPath from "ffmpeg-static";
 
 const app = express();
+const execFileAsync = promisify(execFile);
 const port = Number(process.env.PORT || 8080);
 const root = path.dirname(fileURLToPath(import.meta.url));
 const VIDEO_MODEL = process.env.FAL_VIDEO_MODEL || "minimax/h3-max/text-to-video";
