@@ -147,7 +147,7 @@ function makePlan(concept, style) {
 app.get("/api/ideas", (_req, res) => res.json({ ideas: STORY_IDEAS, choice: "Let the engine choose" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "animated-story-engine", version: "0.2.0" });
+  res.json({ ok: true, service: "animated-story-engine", version: "0.3.0", rendererReady: Boolean(ffmpegPath) });
 });
 
 app.get("/api/status", (_req, res) => {
@@ -160,6 +160,7 @@ app.get("/api/status", (_req, res) => {
   res.json({
     service: "animated-story-engine",
     plannerReady: true,
+    rendererReady: Boolean(ffmpegPath),
     provider: "fal",
     configured: { falKey, videoModel: Boolean(VIDEO_MODEL) },
     generationEnabled: Boolean(falKey && enabled && maxSpend >= estimatedCostUsd && accessTokenConfigured),
@@ -368,6 +369,16 @@ app.get("/api/jobs/:jobType/:requestId", requireEngineAccess, async (req, res) =
 });
 
 
-app.listen(port, "0.0.0.0", () => {
+app.listen(port, "0.0.0.0", async () => {
   console.log("Animated Story Engine listening on " + port);
+  if (ffmpegPath) {
+    try {
+      const probe = await execFileAsync(ffmpegPath, ["-version"], { timeout: 10000, maxBuffer: 1024 * 1024 });
+      console.log("FFmpeg renderer ready: " + String(probe.stdout).split("\\n")[0]);
+    } catch (error) {
+      console.error("FFmpeg renderer probe failed: " + error.message);
+    }
+  } else {
+    console.error("FFmpeg renderer binary is missing.");
+  }
 });
