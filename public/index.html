@@ -52,7 +52,19 @@ pre{white-space:pre-wrap;color:#d5d3e3;font-size:13px;overflow-wrap:anywhere;mar
 </section>
 </main>
 <script>
-let currentPlan=null;
+document.querySelector("#hfRender").addEventListener("click",async()=>{
+  const button=document.querySelector("#hfRender"),out=document.querySelector("#hfResult");
+  const token=document.querySelector("#hfKey").value.trim()||sessionStorage.getItem("engineAccessToken")||"";
+  if(!token){out.textContent="Enter the workspace access key.";return;}
+  sessionStorage.setItem("engineAccessToken",token);button.disabled=true;out.textContent="Rendering with HeyGen HyperFrames. This may take a few minutes…";
+  try{
+    const response=await fetch("/api/hyperframes-test",{method:"POST",headers:{"Authorization":"Bearer "+token}});
+    const data=await response.json();if(!response.ok)throw new Error(data.error+" "+(data.detail||""));
+    out.innerHTML='<b>HyperFrames MP4 rendered.</b> '+(data.bytes/1048576).toFixed(2)+' MB<br><video controls playsinline style="width:100%;border-radius:12px;margin-top:12px" src="'+data.videoUrl+'"></video><p><a href="'+data.videoUrl+'" download="'+data.fileName+'">Download MP4</a></p>';
+  }catch(error){out.textContent="Render failed: "+error.message;}
+  finally{button.disabled=false;}
+});
+\nlet currentPlan=null;
 let engineStatus=null;
 const $=s=>document.querySelector(s);
 async function refreshStatus(){
